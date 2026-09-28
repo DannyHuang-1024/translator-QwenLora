@@ -29,9 +29,20 @@ class TranslationFormatter:
             # Older Transformers versions do not expose enable_thinking.
             return self.tokenizer.apply_chat_template(messages, **kwargs)
 
+    def _text(self, example: dict[str, Any], field: str) -> str:
+        """Read both flat columns and the nested OPUS-100 translation schema."""
+        if field in example:
+            value = example[field]
+        elif isinstance(example.get("translation"), dict) and field in example["translation"]:
+            value = example["translation"][field]
+        else:
+            available = ", ".join(sorted(example))
+            raise KeyError(f"Cannot find language field {field!r}; available fields: {available}")
+        return str(value).strip()
+
     def __call__(self, example: dict[str, Any]) -> dict[str, list[int]]:
-        source = str(example[self.source_field]).strip()
-        target = str(example[self.target_field]).strip()
+        source = self._text(example, self.source_field)
+        target = self._text(example, self.target_field)
         system = (
             "You are a professional translator. Translate the user's text from "
             f"{self.source_language} to {self.target_language}. Return only the translation."
@@ -87,4 +98,3 @@ def load_translation_splits(config: Any) -> DatasetDict:
 def tokenize_splits(raw: DatasetDict, formatter: TranslationFormatter) -> DatasetDict:
     columns = raw["train"].column_names
     return raw.map(formatter, remove_columns=columns, desc="Formatting translation examples")
-
