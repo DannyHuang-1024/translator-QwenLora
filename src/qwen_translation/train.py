@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import inspect
+import json
+import time
 from pathlib import Path
 
 import torch
@@ -12,6 +14,7 @@ from transformers import (
     BitsAndBytesConfig,
     DataCollatorForSeq2Seq,
     Trainer,
+    TrainerCallback,
     TrainingArguments,
     set_seed,
 )
@@ -19,6 +22,26 @@ from transformers.trainer_utils import get_last_checkpoint
 
 from .config import TrainConfig
 from .data import TranslationFormatter, load_translation_splits, tokenize_splits
+
+
+class JsonlMetricsCallback(TrainerCallback):
+    """Persist Trainer metrics so a disconnected Colab session is recoverable."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if not logs or not state.is_world_process_zero:
+            return
+        record = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "step": state.global_step,
+            "epoch": state.epoch,
+            **logs,
+        }
+        with self.path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -78,6 +101,7 @@ def _training_arguments(config: TrainConfig, output_dir: Path) -> TrainingArgume
         save_steps=config.save_steps,
         save_total_limit=config.save_total_limit,
         logging_strategy="steps",
+        logging_dir=str(output_dir / "logs"),
         save_strategy="steps",
         eval_strategy="steps",
         eval_steps=config.eval_steps,
@@ -85,7 +109,7 @@ def _training_arguments(config: TrainConfig, output_dir: Path) -> TrainingArgume
         fp16=torch.cuda.is_available() and not use_bf16,
         gradient_checkpointing=True,
         optim="paged_adamw_8bit" if config.use_4bit and torch.cuda.is_available() else "adamw_torch",
-        report_to=[],
+        report_to=["tensorboard"],
         remove_unused_columns=False,
         ddp_find_unused_parameters=False,
         load_best_model_at_end=False,
@@ -128,6 +152,7 @@ def train(config: TrainConfig) -> Path:
         train_dataset=datasets["train"],
         eval_dataset=datasets["validation"],
         data_collator=collator,
+        callbacks=[JsonlMetricsCallback(output_dir / "metrics.jsonl")],
     )
     if "processing_class" in inspect.signature(Trainer.__init__).parameters:
         trainer_kwargs["processing_class"] = tokenizer

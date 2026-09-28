@@ -42,11 +42,28 @@ bash run.sh
 
 Drive 必须先在 Notebook 单元格中挂载；`run.sh` 本身不再尝试从 shell 子进程调用
 `drive.mount`，因为这种调用没有 Colab Notebook kernel 上下文。首次执行会安装依赖。
-模型缓存、checkpoint、优化器状态
+模型缓存、checkpoint、优化器状态、训练指标和 TensorBoard 日志
 和最终 adapter 都写到 `MyDrive/qwen3-translation/`，训练意外中断后再次执行
 `bash run.sh` 会自动找到最新 checkpoint 并续训。默认只取 20,000 条训练样本和
 1,000 条验证样本，先用于确认流程无报错；确认成功后再在 `configs/train.yaml`
 中增加样本量。
+
+训练日志位于同一个训练目录下：
+
+```text
+metrics.jsonl   每次 logging/evaluation 的 step、epoch、loss、learning rate
+logs/           TensorBoard event 文件
+checkpoint-*/   模型、优化器、scheduler、随机状态和 trainer_state.json
+```
+
+在 Colab Notebook 中查看 TensorBoard：
+
+```python
+%load_ext tensorboard
+%tensorboard --logdir /content/drive/MyDrive/qwen3-translation/checkpoints/qwen3-0.6b-en-zh-lora/logs
+```
+
+`metrics.jsonl` 是追加写入的，断点续训后仍会保留之前的记录。
 
 当前工作区没有可调用的 `google-colab` 远程实例创建接口，因此 `run.sh` 是
 Colab 运行时入口，而不是本地远程调用器。Drive 挂载需要由 Colab Notebook 单元格

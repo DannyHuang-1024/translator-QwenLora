@@ -15,6 +15,7 @@ dependencies = [
     "transformers>=4.51,<5",
     "accelerate>=0.34",
     "bitsandbytes>=0.43",
+    "tensorboard>=2.14",
 ]
 
 [project.scripts]
@@ -23,4 +24,3 @@ qwen3-translate-generate = "qwen_translation.generate:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
