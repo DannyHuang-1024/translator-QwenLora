@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+env/
+dist/
+build/
+*.egg-info/
+.DS_Store
+
+# Training artefacts are kept in Google Drive or outside the repository.
+outputs/
+checkpoints/
+wandb/
+*.safetensors
+*.bin
+*.pt
+

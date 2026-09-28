@@ -1,0 +1,4 @@
+# Keep this file separate from pyproject.toml so a Colab runtime can install
+# the project and its CUDA-aware dependencies in one step.
+-e .
+

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qwen3-lora-translator"
+version = "0.1.0"
+description = "A low-memory Qwen3 LoRA translation fine-tuning project for Colab."
+requires-python = ">=3.10"
+dependencies = [
+    "datasets>=2.19,<4",
+    "peft>=0.14,<0.18",
+    "PyYAML>=6.0",
+    "torch>=2.2",
+    "transformers>=4.51,<5",
+    "accelerate>=0.34",
+    "bitsandbytes>=0.43",
+]
+
+[project.scripts]
+qwen3-translate-train = "qwen_translation.train:main"
+qwen3-translate-generate = "qwen_translation.generate:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
