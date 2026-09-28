@@ -12,6 +12,7 @@ configs/train.yaml                 训练和 Drive 配置
 src/qwen_translation/data.py       数据集加载、聊天模板和 label mask
 src/qwen_translation/train.py      LoRA 训练与断点自动恢复
 src/qwen_translation/generate.py   加载 adapter 做翻译
+evaluation/                        基础模型/LoRA 对照评估与 LaTeX 图表
 scripts/mount_drive.py             Colab Drive 挂载
 scripts/check_env.py               训练前环境检查
 run.sh                              Colab 一键启动脚本
@@ -67,6 +68,25 @@ checkpoint-*/   模型、优化器、scheduler、随机状态和 trainer_state.j
 
 终端只显示训练开始、评估、checkpoint 保存和训练结束等关键节点；逐步 loss、学习率
 等详细指标不会逐条刷屏，而是完整写入 `metrics.jsonl` 和 TensorBoard。
+
+## 训练完成后的对照评估
+
+训练完成后，使用 `evaluation/run_evaluation.sh` 在独立的 `test` split 上比较
+基础模型和 LoRA 模型。它会将两套译文、逐句 BLEU/chrF、bootstrap 置信区间、
+胜平负统计、训练曲线和 LaTeX 表格保存到 Drive：
+
+```bash
+cd /content/translator-QwenLora
+bash evaluation/run_evaluation.sh
+```
+
+默认随机抽取 200 条句子做快速检查。确认流程正常后可运行：
+
+```bash
+LIMIT=1000 bash evaluation/run_evaluation.sh
+```
+
+详细参数和报告文件说明见 [evaluation/README.md](evaluation/README.md)。
 
 当前工作区没有可调用的 `google-colab` 远程实例创建接口，因此 `run.sh` 是
 Colab 运行时入口，而不是本地远程调用器。Drive 挂载需要由 Colab Notebook 单元格

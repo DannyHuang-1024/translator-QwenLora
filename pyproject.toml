@@ -16,6 +16,9 @@ dependencies = [
     "accelerate>=0.34",
     "bitsandbytes>=0.43",
     "tensorboard>=2.14",
+    "sacrebleu>=2.4",
+    "matplotlib>=3.8",
+    "pandas>=2.0",
 ]
 
 [project.scripts]

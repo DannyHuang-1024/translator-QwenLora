@@ -14,7 +14,7 @@ build/
 outputs/
 checkpoints/
 wandb/
+evaluation_outputs/
 *.safetensors
 *.bin
 *.pt
-
