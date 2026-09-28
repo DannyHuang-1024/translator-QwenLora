@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import torch
+import sacrebleu
 from datasets import load_dataset
 from peft import PeftModel
 from sacrebleu import corpus_bleu, corpus_chrf, sentence_bleu, sentence_chrf
@@ -79,6 +80,7 @@ def apply_template(tokenizer, messages):
         "tokenize": True,
         "add_generation_prompt": True,
         "padding": True,
+        "return_dict": True,
         "return_tensors": "pt",
     }
     try:
@@ -120,19 +122,28 @@ def generate_batch(tokenizer, model, sources: list[str], args: argparse.Namespac
         tokenizer,
         conversations(sources, args.source_language, args.target_language),
     )
-    if not isinstance(inputs, torch.Tensor):
-        inputs = inputs["input_ids"]
-    inputs = inputs.to(model_device(model))
+    if isinstance(inputs, torch.Tensor):
+        input_ids = inputs
+        attention_mask = input_ids.ne(tokenizer.pad_token_id).long()
+    else:
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs.get("attention_mask")
+        if attention_mask is None:
+            attention_mask = input_ids.ne(tokenizer.pad_token_id).long()
+    device = model_device(model)
+    input_ids = input_ids.to(device)
+    attention_mask = attention_mask.to(device)
     context = nullcontext() if adapter_enabled else model.disable_adapter()
     with context:
         with torch.inference_mode():
             outputs = model.generate(
-                inputs,
+                input_ids,
+                attention_mask=attention_mask,
                 max_new_tokens=args.max_new_tokens,
                 do_sample=False,
                 pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
             )
-    prompt_length = inputs.shape[-1]
+    prompt_length = input_ids.shape[-1]
     return [
         tokenizer.decode(output[prompt_length:], skip_special_tokens=True).strip()
         for output in outputs
@@ -228,8 +239,8 @@ def score_rows(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[s
         "changed_output_rate": round(sum(row["changed"] for row in rows) / len(rows), 4),
         "base_empty_rate": round(sum(not row["base_prediction"].strip() for row in rows) / len(rows), 4),
         "lora_empty_rate": round(sum(not row["lora_prediction"].strip() for row in rows) / len(rows), 4),
-        "base_chrf_signature": base_chrf.signature,
-        "lora_chrf_signature": lora_chrf.signature,
+        "chrf_signature": "chrF(char_order=6, word_order=0)",
+        "sacrebleu_version": sacrebleu.__version__,
     }
     return rows, summary
 
@@ -288,20 +299,62 @@ def main() -> None:
     random.seed(args.seed)
     output_dir = Path(args.output_dir).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
+    prediction_path = output_dir / "predictions.jsonl"
+    run_config_path = output_dir / "run_config.json"
+    current_run_config = vars(args)
+    reuse_existing = False
+    saved_rows: dict[int, dict[str, Any]] = {}
+    if run_config_path.exists() and prediction_path.exists():
+        try:
+            prior_config = json.loads(run_config_path.read_text(encoding="utf-8"))
+            if prior_config == current_run_config:
+                with prediction_path.open(encoding="utf-8") as handle:
+                    saved_rows = {
+                        int(row["dataset_index"]): row
+                        for line in handle if line.strip()
+                        for row in [json.loads(line)]
+                    }
+                reuse_existing = bool(saved_rows)
+        except (OSError, ValueError, KeyError, TypeError):
+            saved_rows = {}
+    run_config_path.write_text(json.dumps(current_run_config, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Loading held-out split: {args.dataset_name}/{args.dataset_config}:{args.split}", flush=True)
     rows = select_examples(args)
+    if reuse_existing:
+        for row in rows:
+            previous = saved_rows.get(row["dataset_index"])
+            if (previous and previous.get("source") == row["source"]
+                    and previous.get("reference") == row["reference"]):
+                for key in ("base_prediction", "lora_prediction"):
+                    if key in previous:
+                        row[key] = previous[key]
+    prediction_path.open("w", encoding="utf-8").close()
+    reused_rows = [row for row in rows if "base_prediction" in row and "lora_prediction" in row]
+    if reused_rows:
+        with prediction_path.open("a", encoding="utf-8") as handle:
+            for row in reused_rows:
+                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     print(f"Evaluating {len(rows)} examples with batch size {args.batch_size}", flush=True)
-    tokenizer, model = load_model(args.base_model, args.adapter)
-
-    for start in range(0, len(rows), args.batch_size):
-        batch = rows[start : start + args.batch_size]
-        sources = [row["source"] for row in batch]
-        for row, prediction in zip(batch, generate_batch(tokenizer, model, sources, args, False)):
-            row["base_prediction"] = prediction
-        for row, prediction in zip(batch, generate_batch(tokenizer, model, sources, args, True)):
-            row["lora_prediction"] = prediction
-        if (start // args.batch_size + 1) % 10 == 0 or start + args.batch_size >= len(rows):
-            print(f"Generated {min(start + args.batch_size, len(rows))}/{len(rows)} examples", flush=True)
+    missing = [row for row in rows if "base_prediction" not in row or "lora_prediction" not in row]
+    if missing:
+        tokenizer, model = load_model(args.base_model, args.adapter)
+        for start in range(0, len(missing), args.batch_size):
+            batch = missing[start : start + args.batch_size]
+            sources = [row["source"] for row in batch]
+            base_outputs = generate_batch(tokenizer, model, sources, args, False)
+            lora_outputs = generate_batch(tokenizer, model, sources, args, True)
+            for row, prediction in zip(batch, base_outputs):
+                row["base_prediction"] = prediction
+            for row, prediction in zip(batch, lora_outputs):
+                row["lora_prediction"] = prediction
+            with prediction_path.open("a", encoding="utf-8") as handle:
+                for row in batch:
+                    handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+            if (start // args.batch_size + 1) % 10 == 0 or start + args.batch_size >= len(missing):
+                completed = len(rows) - len(missing) + min(start + args.batch_size, len(missing))
+                print(f"Generated {completed}/{len(rows)} examples", flush=True)
+    else:
+        print(f"Reusing {len(rows)} saved predictions; skipping model inference", flush=True)
 
     rows, summary = score_rows(rows)
     summary.update(
@@ -314,11 +367,10 @@ def main() -> None:
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
     )
-    write_jsonl(output_dir / "predictions.jsonl", rows)
+    write_jsonl(prediction_path, rows)
     write_csv(output_dir / "sentence_metrics.csv", rows)
     (output_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     write_latex(summary, rows, output_dir, args.max_examples_in_latex)
-    (output_dir / "run_config.json").write_text(json.dumps(vars(args), ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2), flush=True)
     print(f"Raw predictions and report tables saved to {output_dir}", flush=True)
 
