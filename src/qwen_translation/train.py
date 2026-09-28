@@ -18,6 +18,7 @@ from transformers import (
     TrainingArguments,
     set_seed,
 )
+from transformers.trainer_callback import PrinterCallback, ProgressCallback
 from transformers.trainer_utils import get_last_checkpoint
 
 from .config import TrainConfig
@@ -42,6 +43,29 @@ class JsonlMetricsCallback(TrainerCallback):
         }
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+
+
+class MilestoneConsoleCallback(TrainerCallback):
+    """Keep stdout useful: print lifecycle and evaluation milestones only."""
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        if state.is_world_process_zero:
+            print(f"Training started: {state.max_steps} optimizer steps", flush=True)
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if not state.is_world_process_zero or not metrics:
+            return
+        loss = metrics.get("eval_loss")
+        loss_text = f"eval_loss={loss:.4f}" if isinstance(loss, (int, float)) else "eval complete"
+        print(f"Evaluation at step {state.global_step}: {loss_text}", flush=True)
+
+    def on_save(self, args, state, control, **kwargs):
+        if state.is_world_process_zero:
+            print(f"Checkpoint saved at step {state.global_step}", flush=True)
+
+    def on_train_end(self, args, state, control, **kwargs):
+        if state.is_world_process_zero:
+            print(f"Training ended at step {state.global_step}", flush=True)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -102,6 +126,7 @@ def _training_arguments(config: TrainConfig, output_dir: Path) -> TrainingArgume
         save_total_limit=config.save_total_limit,
         logging_strategy="steps",
         logging_dir=str(output_dir / "logs"),
+        disable_tqdm=True,
         save_strategy="steps",
         eval_strategy="steps",
         eval_steps=config.eval_steps,
@@ -152,13 +177,20 @@ def train(config: TrainConfig) -> Path:
         train_dataset=datasets["train"],
         eval_dataset=datasets["validation"],
         data_collator=collator,
-        callbacks=[JsonlMetricsCallback(output_dir / "metrics.jsonl")],
+        callbacks=[
+            JsonlMetricsCallback(output_dir / "metrics.jsonl"),
+            MilestoneConsoleCallback(),
+        ],
     )
     if "processing_class" in inspect.signature(Trainer.__init__).parameters:
         trainer_kwargs["processing_class"] = tokenizer
     else:
         trainer_kwargs["tokenizer"] = tokenizer
     trainer = Trainer(**trainer_kwargs)
+    # Default console callbacks emit every metric/progress update. Keep those
+    # records in JSONL/TensorBoard and only print our explicit milestones.
+    trainer.remove_callback(PrinterCallback)
+    trainer.remove_callback(ProgressCallback)
 
     checkpoint = get_last_checkpoint(str(output_dir))
     if checkpoint:

@@ -65,6 +65,9 @@ checkpoint-*/   模型、优化器、scheduler、随机状态和 trainer_state.j
 
 `metrics.jsonl` 是追加写入的，断点续训后仍会保留之前的记录。
 
+终端只显示训练开始、评估、checkpoint 保存和训练结束等关键节点；逐步 loss、学习率
+等详细指标不会逐条刷屏，而是完整写入 `metrics.jsonl` 和 TensorBoard。
+
 当前工作区没有可调用的 `google-colab` 远程实例创建接口，因此 `run.sh` 是
 Colab 运行时入口，而不是本地远程调用器。Drive 挂载需要由 Colab Notebook 单元格
 完成，之后 `run.sh` 负责依赖安装和训练。
