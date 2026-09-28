@@ -20,23 +20,37 @@ run.sh                              Colab 一键启动脚本
 ## Colab 运行
 
 1. 在 Colab 中选择 GPU（优先 L4，其次 A100）。
-2. 将本项目上传或 clone 到 `/content/translator-QwenLora`。
-3. 在 Colab 终端执行：
+2. 在 Notebook 的 Python 单元格中先挂载 Google Drive：
+
+```python
+from google.colab import drive
+drive.mount('/content/drive')
+```
+
+3. 将本项目上传或 clone 到 `/content/translator-QwenLora`。例如在 Notebook 单元格中执行：
+
+```bash
+!git clone <你的GitHub仓库地址> /content/translator-QwenLora
+```
+
+4. 在 Colab Notebook 单元格或 Colab 终端执行：
 
 ```bash
 cd /content/translator-QwenLora
 bash run.sh
 ```
 
-首次执行会安装依赖并要求授权 Google Drive。模型缓存、checkpoint、优化器状态
+Drive 必须先在 Notebook 单元格中挂载；`run.sh` 本身不再尝试从 shell 子进程调用
+`drive.mount`，因为这种调用没有 Colab Notebook kernel 上下文。首次执行会安装依赖。
+模型缓存、checkpoint、优化器状态
 和最终 adapter 都写到 `MyDrive/qwen3-translation/`，训练意外中断后再次执行
 `bash run.sh` 会自动找到最新 checkpoint 并续训。默认只取 20,000 条训练样本和
 1,000 条验证样本，先用于确认流程无报错；确认成功后再在 `configs/train.yaml`
 中增加样本量。
 
 当前工作区没有可调用的 `google-colab` 远程实例创建接口，因此 `run.sh` 是
-Colab 运行时入口，而不是伪造一个本地远程调用。它会在真正的 Colab 环境中完成
-依赖安装和 Drive 挂载。
+Colab 运行时入口，而不是本地远程调用器。Drive 挂载需要由 Colab Notebook 单元格
+完成，之后 `run.sh` 负责依赖安装和训练。
 
 ## 生成测试
 
@@ -58,4 +72,3 @@ python3 -m compileall -q src scripts
 
 真正的训练需要 Colab GPU、Hugging Face 模型/数据集下载权限和 Google Drive；
 `run.sh` 不会在不具备这些条件的本地机器上误启动长任务。
-
