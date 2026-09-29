@@ -15,7 +15,7 @@ if [[ ! -d /content/drive/MyDrive ]]; then
 fi
 
 cd "${ROOT_DIR}"
-"${PYTHON_BIN}" -m pip install "sacrebleu>=2.4" "matplotlib>=3.8" "pandas>=2.0"
+"${PYTHON_BIN}" -m pip install --upgrade "bitsandbytes>=0.46.1" "sacrebleu>=2.4" "matplotlib>=3.8" "pandas>=2.0"
 export PYTHONPATH="${ROOT_DIR}/src${PYTHONPATH:+:${PYTHONPATH}}"
 "${PYTHON_BIN}" evaluation/evaluate.py \
   --adapter "${ADAPTER}" \
@@ -26,4 +26,3 @@ export PYTHONPATH="${ROOT_DIR}/src${PYTHONPATH:+:${PYTHONPATH}}"
   --evaluation-dir "${OUTPUT_DIR}" \
   --training-metrics "${METRICS}"
 echo "Evaluation artifacts saved to ${OUTPUT_DIR}"
-

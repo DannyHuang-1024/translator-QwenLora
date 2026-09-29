@@ -93,7 +93,7 @@ def load_model(base_model: str, adapter: str):
     use_cuda = torch.cuda.is_available()
     dtype = torch.bfloat16 if use_cuda and torch.cuda.is_bf16_supported() else torch.float16
     kwargs: dict[str, Any] = {
-        "torch_dtype": dtype if use_cuda else torch.float32,
+        "dtype": dtype if use_cuda else torch.float32,
     }
     if use_cuda:
         kwargs["device_map"] = "auto"

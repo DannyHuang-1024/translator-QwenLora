@@ -23,7 +23,7 @@ def generate(args: argparse.Namespace) -> str:
     dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
     model = AutoModelForCausalLM.from_pretrained(
         args.base_model,
-        torch_dtype=dtype if torch.cuda.is_available() else torch.float32,
+        dtype=dtype if torch.cuda.is_available() else torch.float32,
         device_map="auto" if torch.cuda.is_available() else None,
     )
     model = PeftModel.from_pretrained(model, args.adapter)
@@ -63,4 +63,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

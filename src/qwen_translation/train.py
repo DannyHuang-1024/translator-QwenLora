@@ -88,7 +88,7 @@ def _load_model(config: TrainConfig):
             bnb_4bit_compute_dtype=compute_dtype,
             bnb_4bit_use_double_quant=config.use_nested_quant,
         )
-    model_kwargs = {"torch_dtype": compute_dtype if torch.cuda.is_available() else torch.float32}
+    model_kwargs = {"dtype": compute_dtype if torch.cuda.is_available() else torch.float32}
     if quantization_config is not None:
         model_kwargs.update({"quantization_config": quantization_config, "device_map": "auto"})
     model = AutoModelForCausalLM.from_pretrained(config.model_name_or_path, **model_kwargs)
